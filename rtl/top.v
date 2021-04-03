@@ -184,6 +184,7 @@ module top(
 
 `define N_PAIR 86
 
+wire [`N_PAIR-1:0] scan_output_tri;
 reg [`N_PAIR-1:0] scan_output;
 wire [`N_PAIR-1:0] scan_input;
 reg [`N_PAIR-1:0] scan_input_ff, scan_output_shift;
@@ -286,7 +287,14 @@ assign {
     // CLK_3_o,
     // CLK_2_o,
     // CLK_1_o
-} = scan_output;
+} = scan_output_tri;
+
+genvar i;
+generate
+    for (i=0; i<`N_PAIR; i=1+i) begin : tri_o
+        assign scan_output_tri[i] = scan_output[i] ? 1'bz : 1'b0;
+    end
+endgenerate
 
 assign scan_input = {
     B1_1_i,
@@ -380,6 +388,14 @@ assign scan_input = {
     // CLK_1_i
 };
 
+wire [`N_PAIR:0] probe_sources;
+
+test_probe u0 (
+.source     (probe_sources),     //    sources.source
+.probe      (scan_input_ff),      //     probes.probe
+.source_clk (clk)  // source_clk.clk
+);
+
 always @(posedge clk) begin
     if(por_cnt != 5'h15)
         por_cnt <= por_cnt + 1'b1;
@@ -400,14 +416,14 @@ end
 
 always @(posedge clk or negedge reset_n) begin
     if(~reset_n) begin
-        scan_output_shift <= `N_PAIR'h1;
+        scan_output_shift <= ~`N_PAIR'h1; // single "0" bit
     end else if(~output_div_cnt == 5'h0) begin
         scan_output_shift <= {scan_output_shift[0+:`N_PAIR-1], scan_output_shift[`N_PAIR-1]};
     end
 end
 
 always @(posedge clk) begin
-    scan_output <= scan_output_shift;
+    scan_output <= probe_sources[`N_PAIR] ? scan_output_shift : probe_sources[0+:`N_PAIR];
     scan_input_ff <= scan_input;
 end
 
