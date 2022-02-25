@@ -183,17 +183,23 @@ module top(
 );
 
 `define N_PAIR 86
+`define DIV_LOG2 6
+// 48MHz / 2**6 = 0.75MHz
 
 wire [`N_PAIR-1:0] scan_output_tri;
 reg [`N_PAIR-1:0] scan_output;
 wire [`N_PAIR-1:0] scan_input;
 reg [`N_PAIR-1:0] scan_input_ff, scan_output_shift;
 reg [4:0] por_cnt;
-reg [4:0] output_div_cnt;
+reg [`DIV_LOG2-1:0] output_div_cnt;
+reg scan_shift_en;
 reg reset_ff_n;
 reg reset_n;
 (*preserve*) reg mismatch;
 (*preserve*) reg mismatch_keep;
+
+wire [`N_PAIR-1:0] probe_sources;
+wire manual_mode;
 
 assign dclk_o = mismatch_keep;
 
@@ -388,10 +394,10 @@ assign scan_input = {
     // CLK_1_i
 };
 
-wire [`N_PAIR:0] probe_sources;
+
 
 test_probe u0 (
-.source     (probe_sources),     //    sources.source
+.source     ({manual_mode, probe_sources}),     //    sources.source
 .probe      (scan_input_ff),      //     probes.probe
 .source_clk (clk)  // source_clk.clk
 );
@@ -408,22 +414,23 @@ end
 
 always @(posedge clk or negedge reset_n) begin
     if(~reset_n) begin
-        output_div_cnt <= 5'h0;
+        output_div_cnt <= `DIV_LOG2'h0;
     end else begin
-        output_div_cnt <= output_div_cnt + 5'h1;
+        output_div_cnt <= output_div_cnt + `DIV_LOG2'h1;
     end
 end
 
 always @(posedge clk or negedge reset_n) begin
     if(~reset_n) begin
         scan_output_shift <= ~`N_PAIR'h1; // single "0" bit
-    end else if(~output_div_cnt == 5'h0) begin
+    end else if(scan_shift_en) begin
         scan_output_shift <= {scan_output_shift[0+:`N_PAIR-1], scan_output_shift[`N_PAIR-1]};
     end
 end
 
 always @(posedge clk) begin
-    scan_output <= probe_sources[`N_PAIR] ? scan_output_shift : probe_sources[0+:`N_PAIR];
+	 scan_shift_en <= &output_div_cnt;
+    scan_output <= manual_mode ? probe_sources[0+:`N_PAIR] : scan_output_shift;
     scan_input_ff <= scan_input;
 end
 
@@ -431,7 +438,7 @@ always @(posedge clk or negedge reset_n) begin
     if(~reset_n) begin
         mismatch <= 1'b0;
     end else begin
-        mismatch <= (~output_div_cnt == 5'h0 && scan_output_shift != scan_input_ff);
+        mismatch <= (scan_shift_en && scan_output_shift != scan_input_ff);
     end
 end
 
